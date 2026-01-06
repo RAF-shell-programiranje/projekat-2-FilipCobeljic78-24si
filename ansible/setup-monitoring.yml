@@ -1,0 +1,39 @@
+---
+# ==============================================================================
+# SETUP MONITORING - Ansible Playbook
+# ==============================================================================
+#
+# Deploy monitoring sistema na Monitoring VM.
+#
+# Usage:
+#   ansible-playbook -i inventory.ini setup-monitoring.yml
+#
+# ==============================================================================
+
+- name: Setup Monitoring System
+  hosts: monitoring_server
+  become: true
+  gather_facts: true
+  
+  roles:
+    - monitoring
+  
+  post_tasks:
+    - name: Final verification message
+      ansible.builtin.debug:
+        msg:
+          - "========================================="
+          - "✅ Monitoring Setup Complete!"
+          - "========================================="
+          - ""
+          - "Verify deployment:"
+          - "  1. Check Postfix: sudo systemctl status postfix"
+          - "  2. List cron jobs: crontab -l"
+          - "  3. Check scripts: ls -la {{ monitoring_scripts_dir }}"
+          - "  4. View config: cat {{ monitoring_config_file }}"
+          - ""
+          - "Test email manually:"
+          - "  echo 'Test' | mail -s 'Test' {{ monitoring_email }}"
+          - ""
+          - "Check Mailtrap inbox: https://mailtrap.io"
+

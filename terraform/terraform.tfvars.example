@@ -1,0 +1,142 @@
+# ==============================================================================
+# TERRAFORM VARIABLES - PRIMER KONFIGURACIJE
+# ==============================================================================
+# 
+# UPUTSTVO:
+# 1. Kopiraj ovaj fajl u: terraform.tfvars
+#    cp terraform.tfvars.example terraform.tfvars
+#
+# 2. Popuni vrednosti ispod sa svojim podacima
+#
+# 3. terraform.tfvars je dodat u .gitignore - NIKAD ga ne commit-uj!
+#    (sadrži potencijalno osetljive podatke)
+#
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# AZURE REGION
+# ------------------------------------------------------------------------------
+# Italy North je preporučen za Srbiju (najmanja latencija ~20-30ms)
+# Druge opcije: "francecentral", "westeurope", "northeurope"
+
+location = "italynorth"
+
+# ------------------------------------------------------------------------------
+# PROJECT NAMING
+# ------------------------------------------------------------------------------
+# Koristi se kao prefiks za sve Azure resurse
+# Pravila: lowercase, brojevi, crtice, max 20 karaktera
+
+project_name = "dummy-service"
+environment  = "dev"
+
+# ------------------------------------------------------------------------------
+# VIRTUAL MACHINE CONFIGURATION
+# ------------------------------------------------------------------------------
+# VM veličina - biraj prema potrebama:
+#
+# Standard_B1s:  1 vCPU, 1 GB RAM  (~8 EUR/mesec)   - Za testiranje
+# Standard_B2s:  2 vCPU, 4 GB RAM  (~30 EUR/mesec)  - Bolje performanse
+# Standard_B1ms: 1 vCPU, 2 GB RAM  (~15 EUR/mesec)  - Srednja opcija
+
+vm_size = "Standard_B1s"
+
+# Admin korisničko ime za SSH pristup
+admin_username = "azureuser"
+
+# Putanja do tvog SSH PUBLIC KEY-a
+# Generisanje SSH ključa (ako nemaš):
+#   ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+
+# ------------------------------------------------------------------------------
+# DISK CONFIGURATION
+# ------------------------------------------------------------------------------
+# OS Disk veličina (minimum 30 GB za Ubuntu)
+os_disk_size_gb = 30
+
+# Tip diska:
+# Standard_LRS:    HDD, najjeftiniji (~4 EUR/mesec za 30GB)
+# StandardSSD_LRS: SSD, brži (~6 EUR/mesec za 30GB)
+# Premium_LRS:     Premium SSD (zahteva Premium VM SKU)
+
+os_disk_type = "Standard_LRS"
+
+# ------------------------------------------------------------------------------
+# NETWORK SECURITY
+# ------------------------------------------------------------------------------
+# VAŽNO: Lista IP adresa koje mogu pristupiti SSH-u
+#
+# Za testiranje (NESIGURNO - dozvoljava sve):
+# allowed_ssh_source_ips = ["0.0.0.0/0"]
+#
+# Za produkciju (PREPORUČENO - samo tvoja IP):
+# 1. Pronađi svoju javnu IP adresu: curl ifconfig.me
+# 2. Dodaj /32 na kraju (npr. "123.45.67.89/32")
+
+allowed_ssh_source_ips = ["0.0.0.0/0"]  # PROMENI OVO!
+
+# Port na kojem radi Java aplikacija (ako je web app)
+application_port = 8080
+
+# Da li omogućiti javni pristup aplikaciji?
+# false = samo lokalni pristup (za dummy service koji piše u log)
+# true  = eksterni pristup preko application_port
+
+enable_public_app_access = false
+
+# Port za monitoring sistem (ako koristiš Prometheus, Grafana, itd.)
+monitoring_port = 9090
+
+# ------------------------------------------------------------------------------
+# RESOURCE TAGS
+# ------------------------------------------------------------------------------
+# Azure tagovi za organizaciju i praćenje resursa
+
+tags = {
+  Project     = "Dummy Service Deployment"
+  ManagedBy   = "Terraform"
+  Environment = "Development"
+  Region      = "Italy North"
+  Owner       = "Your Name"  # DODAJ SVOJE IME
+  CostCenter  = "Education"
+}
+
+# ------------------------------------------------------------------------------
+# VM IMAGE (UBUNTU 22.04 LTS)
+# ------------------------------------------------------------------------------
+# Standardne vrednosti - obično ne treba menjati
+
+vm_image_publisher = "Canonical"
+vm_image_offer     = "0001-com-ubuntu-server-jammy"
+vm_image_sku       = "22_04-lts-gen2"
+vm_image_version   = "latest"
+
+# ==============================================================================
+# NAPOMENE
+# ==============================================================================
+#
+# 1. PROCENA TROŠKOVA (Italy North):
+#    - 2x VM (Standard_B1s):      ~16 EUR/mesec
+#    - 2x Disk (30GB Standard):   ~8 EUR/mesec
+#    - 2x Public IP:              ~4 EUR/mesec
+#    - Network egress:            ~2 EUR/mesec
+#    ────────────────────────────────────────
+#    UKUPNO:                      ~30 EUR/mesec
+#
+# 2. BESPLATNI KREDITI:
+#    - Azure for Students: 100$ godišnje
+#    - Free Tier: Neki servisi besplatni prvih 12 meseci
+#
+# 3. SIGURNOST:
+#    - OBAVEZNO promeni allowed_ssh_source_ips na svoju IP!
+#    - Koristi jake SSH ključeve (RSA 4096-bit ili Ed25519)
+#    - Redovno update-uj sistem (apt update && apt upgrade)
+#
+# 4. TERRAFORM KOMANDE:
+#    terraform init      # Inicijalizacija (prvi put)
+#    terraform plan      # Pregled promena
+#    terraform apply     # Primena promena
+#    terraform destroy   # Brisanje svih resursa
+#
+# ==============================================================================

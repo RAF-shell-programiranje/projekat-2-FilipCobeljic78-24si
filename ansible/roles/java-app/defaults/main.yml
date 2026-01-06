@@ -1,0 +1,30 @@
+---
+# ------------------------------------------------------------------------------
+# SERVICE USER & GROUP
+# ------------------------------------------------------------------------------
+# Systemd service će raditi pod ovim user-om (ne root!)
+dummy_service_user: "dummyservice"
+dummy_service_group: "dummyservice"
+
+# ------------------------------------------------------------------------------
+# SERVICE CONFIGURATION
+# ------------------------------------------------------------------------------
+
+dummy_service_name: "dummy-service"
+
+
+dummy_service_port: 8080
+
+# ------------------------------------------------------------------------------
+# FILE PATHS
+# ------------------------------------------------------------------------------
+
+dummy_service_install_dir: "/opt/dummy-service"
+
+dummy_service_jar_name: "dummy-service.jar"
+
+dummy_service_jar_path: "{{ dummy_service_install_dir }}/{{ dummy_service_jar_name }}"
+
+dummy_service_log_path: "/var/log/dummy-service"
+
+dummy_service_log_file: "{{ dummy_service_log_path }}/application.log"

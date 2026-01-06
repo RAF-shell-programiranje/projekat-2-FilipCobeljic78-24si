@@ -1,0 +1,62 @@
+---
+# ------------------------------------------------------------------------------
+# PACKAGES
+# ------------------------------------------------------------------------------
+monitoring_packages:
+  - postfix
+  - mailutils
+  - bc 
+
+# ------------------------------------------------------------------------------
+# EMAIL CONFIGURATION
+# ------------------------------------------------------------------------------
+monitoring_email: "{{ monitoring_email | default('admin@example.com') }}"
+
+monitoring_email_subject: "Dummy Service Status Report"
+
+# Mailtrap SMTP configuration
+smtp_server: "sandbox.smtp.mailtrap.io"
+smtp_port: "2525"
+smtp_username: "6eb856c27440cc"
+smtp_password: "bc5711d699f015"
+
+postfix_relayhost: "[sandbox.smtp.mailtrap.io]:2525"
+
+# ------------------------------------------------------------------------------
+# MONITORING SCRIPTS PATHS
+# ------------------------------------------------------------------------------
+
+monitoring_scripts_dir: "/usr/local/bin/monitoring"
+
+
+check_service_script: "{{ monitoring_scripts_dir }}/check-service.sh"
+monitor_resources_script: "{{ monitoring_scripts_dir }}/monitor-resources.sh"
+parse_logs_script: "{{ monitoring_scripts_dir }}/parse-logs.sh"
+
+
+monitoring_config_file: "/etc/monitoring.conf"
+
+# ------------------------------------------------------------------------------
+# CRON SCHEDULE
+# ------------------------------------------------------------------------------
+
+monitoring_cron_schedule: "* * * * *"
+
+# ------------------------------------------------------------------------------
+# DUMMY SERVICE MONITORING CONFIG
+# ------------------------------------------------------------------------------
+
+dummy_service_name: "dummy-service"
+dummy_service_log_file: "/var/log/dummy-service/application.log"  # Legacy variable (not used for systemd services)
+dummy_service_log_path: "/var/log/dummy-service"                   # Legacy variable (not used for systemd services)
+
+# Number of log lines to retrieve from journalctl
+log_lines_to_show: 20
+
+# ------------------------------------------------------------------------------
+# SYSTEM RESOURCES THRESHOLDS
+# ------------------------------------------------------------------------------
+
+cpu_threshold: 80        
+memory_threshold: 80     
+disk_threshold: 90      

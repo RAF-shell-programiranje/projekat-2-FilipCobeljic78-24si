@@ -1,0 +1,208 @@
+#!/bin/bash
+# ------------------------------------------------------------------------------
+# CONFIGURATION - Load from monitoring.conf
+# ------------------------------------------------------------------------------
+
+CONFIG_FILE="{{ monitoring_config_file }}"
+
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    echo "ERROR: Configuration file $CONFIG_FILE not found!"
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# VARIABLES
+# ------------------------------------------------------------------------------
+
+EMAIL="{{ monitoring_email }}"
+EMAIL_SUBJECT="System Resources Alert"
+HOSTNAME="{{ ansible_hostname }}"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+
+CPU_THRESHOLD="{{ cpu_threshold }}"
+MEMORY_THRESHOLD="{{ memory_threshold }}"
+DISK_THRESHOLD="{{ disk_threshold }}"
+
+EMAIL_BODY="/tmp/monitor-resources-email-$$.txt"
+ALERT_TRIGGERED=0
+
+# ------------------------------------------------------------------------------
+# FUNCTIONS
+# ------------------------------------------------------------------------------
+
+get_cpu_usage() {
+    # Using top command (1 iteration, batch mode)
+    top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1
+}
+
+
+get_memory_usage() {
+    free | grep Mem | awk '{printf "%.1f", ($3/$2) * 100.0}'
+}
+
+
+get_disk_usage() {
+    df -h / | awk 'NR==2 {print $5}' | sed 's/%//'
+}
+
+
+get_system_info() {
+    cat << EOF
+========================================
+CPU Information:
+========================================
+$(top -bn1 | head -n 20)
+
+========================================
+Memory Information:
+========================================
+$(free -h)
+
+========================================
+Disk Information:
+========================================
+$(df -h)
+
+========================================
+Top Processes by CPU:
+========================================
+$(ps aux --sort=-%cpu | head -n 10)
+
+========================================
+Top Processes by Memory:
+========================================
+$(ps aux --sort=-%mem | head -n 10)
+EOF
+}
+
+send_alert() {
+    local subject="$1"
+    local body_file="$2"
+    
+    if [ -f "$body_file" ]; then
+        mail -s "$subject" "$EMAIL" < "$body_file"
+        echo "✉️  Alert email sent to $EMAIL"
+    else
+        echo "ERROR: Email body file not found: $body_file"
+    fi
+}
+
+echo "========================================="
+echo "System Resources Monitoring"
+echo "========================================="
+echo "Host: $HOSTNAME"
+echo "Timestamp: $TIMESTAMP"
+echo ""
+
+CPU_USAGE=$(get_cpu_usage)
+MEMORY_USAGE=$(get_memory_usage)
+DISK_USAGE=$(get_disk_usage)
+
+echo "Current Resource Usage:"
+echo "  CPU:    ${CPU_USAGE}% (threshold: ${CPU_THRESHOLD}%)"
+echo "  Memory: ${MEMORY_USAGE}% (threshold: ${MEMORY_THRESHOLD}%)"
+echo "  Disk:   ${DISK_USAGE}% (threshold: ${DISK_THRESHOLD}%)"
+echo ""
+
+if (( $(echo "$CPU_USAGE > $CPU_THRESHOLD" | bc -l) )); then
+    echo "⚠️  WARNING: CPU usage (${CPU_USAGE}%) exceeds threshold (${CPU_THRESHOLD}%)!"
+    ALERT_TRIGGERED=1
+    CPU_STATUS="⚠️  HIGH"
+else
+    echo "✅ CPU usage is normal"
+    CPU_STATUS="✅ OK"
+fi
+
+if (( $(echo "$MEMORY_USAGE > $MEMORY_THRESHOLD" | bc -l) )); then
+    echo "⚠️  WARNING: Memory usage (${MEMORY_USAGE}%) exceeds threshold (${MEMORY_THRESHOLD}%)!"
+    ALERT_TRIGGERED=1
+    MEMORY_STATUS="⚠️  HIGH"
+else
+    echo "✅ Memory usage is normal"
+    MEMORY_STATUS="✅ OK"
+fi
+
+if [ "$DISK_USAGE" -gt "$DISK_THRESHOLD" ]; then
+    echo "⚠️  WARNING: Disk usage (${DISK_USAGE}%) exceeds threshold (${DISK_THRESHOLD}%)!"
+    ALERT_TRIGGERED=1
+    DISK_STATUS="⚠️  HIGH"
+else
+    echo "✅ Disk usage is normal"
+    DISK_STATUS="✅ OK"
+fi
+
+echo ""
+
+if [ $ALERT_TRIGGERED -eq 1 ]; then
+    echo "🚨 Resource threshold exceeded - Sending alert email..."
+    
+    cat > "$EMAIL_BODY" << EOF
+🚨 SYSTEM ALERT: High Resource Usage Detected
+========================================
+
+Host: $HOSTNAME
+Timestamp: $TIMESTAMP
+
+⚠️ ACTION REQUIRED: Resource usage has exceeded configured thresholds!
+
+========================================
+Resource Usage Summary:
+========================================
+
+CPU Usage:    ${CPU_USAGE}% ${CPU_STATUS}
+  Threshold:  ${CPU_THRESHOLD}%
+
+Memory Usage: ${MEMORY_USAGE}% ${MEMORY_STATUS}
+  Threshold:  ${MEMORY_THRESHOLD}%
+
+Disk Usage:   ${DISK_USAGE}% ${DISK_STATUS}
+  Threshold:  ${DISK_THRESHOLD}%
+
+========================================
+Detailed System Information:
+========================================
+
+$(get_system_info)
+
+========================================
+Recommended Actions:
+========================================
+
+1. SSH to monitoring-vm:
+   ssh {{ ansible_user }}@{{ ansible_host }}
+
+2. Investigate high resource usage:
+   - Check processes: htop or top
+   - Review logs: journalctl -xe
+   - Check disk space: df -h
+
+3. Common solutions:
+   - Kill unnecessary processes
+   - Clean up disk space: sudo apt clean
+   - Restart services if needed
+   - Scale resources if persistent
+
+========================================
+This is an automated alert from the Monitoring VM.
+========================================
+EOF
+
+    send_alert "🚨 ALERT: $EMAIL_SUBJECT - $HOSTNAME" "$EMAIL_BODY"
+    
+else
+    echo "✅ All resources within normal limits"
+    
+    # Optional: Send success report (comment out if too many emails)
+    # cat > "$EMAIL_BODY" << EOF
+fi
+
+rm -f "$EMAIL_BODY"
+
+echo "========================================="
+echo "Resource monitoring completed"
+echo "========================================="
+
+exit 0

@@ -1,0 +1,14 @@
+---
+- name: Postmap SASL password
+  command: postmap /etc/postfix/sasl_passwd
+  tags:
+    - monitoring
+    - postfix
+
+- name: Restart Postfix
+  systemd:
+    name: postfix
+    state: restarted
+  tags:
+    - monitoring
+    - postfix

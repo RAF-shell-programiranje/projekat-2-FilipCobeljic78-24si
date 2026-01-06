@@ -1,0 +1,186 @@
+#!/bin/bash
+# ------------------------------------------------------------------------------
+# CONFIGURATION - Load from monitoring.conf
+# ------------------------------------------------------------------------------
+
+CONFIG_FILE="{{ monitoring_config_file }}"
+
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    echo "ERROR: Configuration file $CONFIG_FILE not found!"
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# VARIABLES
+# ------------------------------------------------------------------------------
+
+SERVICE_NAME="{{ dummy_service_name }}"
+APP_VM_IP="{{ hostvars[groups['app_server'][0]]['ansible_host'] }}"
+EMAIL="{{ monitoring_email }}"
+HOSTNAME="{{ ansible_hostname }}"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+EMAIL_BODY="/tmp/check-service-email-$$.txt"
+
+# ------------------------------------------------------------------------------
+# FUNCTIONS
+# ------------------------------------------------------------------------------
+
+check_service_status() {
+    # SSH to app-vm and check systemd service status
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo systemctl is-active $SERVICE_NAME" 2>/dev/null
+}
+
+get_service_info() {
+    # Get full service status
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo systemctl status $SERVICE_NAME --no-pager" 2>/dev/null
+}
+
+get_recent_logs() {
+    # Get last 20 lines from journalctl
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME -n 20 --no-pager" 2>/dev/null
+}
+
+check_error_logs() {
+    # Check for ERROR/FATAL messages in last 100 lines
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME -n 100 --no-pager | grep -i 'ERROR\|FATAL' | wc -l" 2>/dev/null
+}
+
+send_email() {
+    local subject="$1"
+    local body_file="$2"
+    
+    if [ -f "$body_file" ]; then
+        # Use sendmail with proper headers
+        (
+            echo "From: monitoring@${HOSTNAME}"
+            echo "To: ${EMAIL}"
+            echo "Subject: ${subject}"
+            echo "Content-Type: text/plain; charset=UTF-8"
+            echo ""
+            cat "$body_file"
+        ) | /usr/sbin/sendmail -t
+        echo "✉️  Email sent to $EMAIL"
+    else
+        echo "ERROR: Email body file not found: $body_file"
+    fi
+}
+
+
+echo "========================================="
+echo "Dummy Service Status Check (Remote)"
+echo "========================================="
+echo "Service: $SERVICE_NAME"
+echo "App VM: $APP_VM_IP"
+echo "Timestamp: $TIMESTAMP"
+echo "Monitoring Host: $HOSTNAME"
+echo ""
+
+STATUS=$(check_service_status)
+ERROR_COUNT=$(check_error_logs)
+
+if [ "$STATUS" == "active" ]; then
+    
+    echo "✅ Status: ACTIVE (running)"
+    echo "📊 Recent errors/fatals: $ERROR_COUNT"
+    
+    cat > "$EMAIL_BODY" << EOF
+Dummy Service Status Report
+========================================
+
+Status: ✅ ACTIVE (running)
+Service: $SERVICE_NAME
+App VM: $APP_VM_IP
+Monitoring Host: $HOSTNAME
+Timestamp: $TIMESTAMP
+Recent Errors/Fatals: $ERROR_COUNT
+
+========================================
+Detailed Service Information:
+========================================
+
+$(get_service_info)
+
+========================================
+Recent Logs (last 20 lines):
+========================================
+
+$(get_recent_logs)
+
+========================================
+This is an automated status report from the Monitoring VM.
+========================================
+EOF
+    send_email "✅ Dummy Service Status - Service UP" "$EMAIL_BODY"
+    
+    echo "✅ Email sent: Service is UP"
+    
+else
+    echo "❌ Status: INACTIVE (stopped/failed)"
+    
+    cat > "$EMAIL_BODY" << EOF
+🚨 ALERT: Dummy Service is DOWN!
+========================================
+
+Status: ❌ INACTIVE (stopped/failed)
+Service: $SERVICE_NAME
+App VM: $APP_VM_IP
+Monitoring Host: $HOSTNAME
+Timestamp: $TIMESTAMP
+
+⚠️ ACTION REQUIRED: Please investigate immediately!
+
+========================================
+Detailed Service Information:
+========================================
+
+$(get_service_info)
+
+========================================
+Recent Journal Logs (last 20 lines):
+========================================
+
+$(get_recent_logs)
+
+========================================
+Recommended Actions:
+========================================
+
+1. SSH to app-vm:
+   ssh {{ ansible_user }}@$APP_VM_IP
+
+2. Check service status:
+   sudo systemctl status $SERVICE_NAME
+
+3. View logs:
+   sudo journalctl -u $SERVICE_NAME -f
+
+4. Restart service (if needed):
+   sudo systemctl restart $SERVICE_NAME
+
+========================================
+This is an automated alert from the Monitoring VM.
+========================================
+EOF
+
+    send_email "🚨 ALERT: $EMAIL_SUBJECT - Service DOWN!" "$EMAIL_BODY"
+    
+    echo "🚨 ALERT Email sent: Service is DOWN!"
+    
+    rm -f "$EMAIL_BODY"
+    exit 1
+fi
+
+rm -f "$EMAIL_BODY"
+
+echo "========================================="
+echo "Check completed successfully"
+echo "========================================="
+
+exit 0

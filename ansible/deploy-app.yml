@@ -1,0 +1,25 @@
+---
+- name: Deploy Dummy Service Application
+  hosts: app_server
+  become: yes
+  
+  roles:
+    - java-app
+
+  post_tasks:
+    - name: Final deployment message
+      debug:
+        msg:
+          - "========================================="
+          - "✅ Dummy Service Deployment SUCCESS!"
+          - "========================================="
+          - ""
+          - "Next steps:"
+          - "1. SSH to VM: ssh {{ ansible_user }}@{{ ansible_host }}"
+          - "2. Check service: sudo systemctl status dummy-service"
+          - "3. View logs: tail -f /var/log/dummy-service/application.log"
+          - ""
+          - "Service details:"
+          - "  - JAR: {{ dummy_service_jar_path }}"
+          - "  - Log: {{ dummy_service_log_file }}"
+          - "  - User: {{ dummy_service_user }}"

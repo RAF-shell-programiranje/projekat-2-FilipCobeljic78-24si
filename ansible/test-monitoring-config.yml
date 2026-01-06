@@ -1,0 +1,31 @@
+---
+- name: Test Monitoring Config Rendering
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  
+  vars:
+    monitoring_email: "test@example.com"
+    monitoring_email_subject: "Test Subject"
+    dummy_service_name: "dummy-service"
+    dummy_service_log_file: "/var/log/dummy-service/application.log"
+    log_lines_to_show: 20
+    cpu_threshold: 80
+    memory_threshold: 80
+    disk_threshold: 90
+    monitoring_scripts_dir: "/usr/local/bin/monitoring"
+  
+  tasks:
+    - name: Render monitoring.conf
+      template:
+        src: roles/monitoring/templates/monitoring.conf.j2
+        dest: /tmp/monitoring.conf
+        mode: '0644'
+    
+    - name: Display rendered config
+      command: cat /tmp/monitoring.conf
+      register: config_output
+    
+    - name: Show config
+      debug:
+        var: config_output.stdout_lines

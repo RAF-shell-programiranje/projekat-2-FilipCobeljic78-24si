@@ -1,0 +1,229 @@
+---
+# ------------------------------------------------------------------------------
+# SYSTEM UPDATE & JAVA INSTALLATION
+# ------------------------------------------------------------------------------
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags:
+    - java-app
+    - setup
+
+- name: Install Java {{ java_version }}
+  apt:
+    name: "{{ java_package }}"
+    state: present
+  tags:
+    - java-app
+    - java
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+  tags:
+    - java-app
+    - packages
+
+# ------------------------------------------------------------------------------
+# VERIFY JAVA INSTALLATION
+# ------------------------------------------------------------------------------
+
+- name: Verify Java installation
+  command: java -version
+  register: java_version_output
+  changed_when: false
+  tags:
+    - java-app
+    - java
+    - verify
+
+- name: Display Java version
+  debug:
+    msg: "Java version: {{ java_version_output.stderr_lines[0] }}"
+  tags:
+    - java-app
+    - java
+    - verify
+
+# ------------------------------------------------------------------------------
+# CREATE SYSTEM USER & GROUP
+# ------------------------------------------------------------------------------
+
+- name: Create dummy-service system group
+  group:
+    name: "{{ dummy_service_group }}"
+    system: yes
+    state: present
+  tags:
+    - java-app
+    - user
+
+- name: Create dummy-service system user
+  user:
+    name: "{{ dummy_service_user }}"
+    group: "{{ dummy_service_group }}"
+    system: yes
+    shell: /bin/false
+    create_home: no
+    comment: "Dummy Service System User"
+  tags:
+    - java-app
+    - user
+
+# ------------------------------------------------------------------------------
+# CREATE DIRECTORIES
+# ------------------------------------------------------------------------------
+
+- name: Create installation directory
+  file:
+    path: "{{ dummy_service_install_dir }}"
+    state: directory
+    owner: "{{ dummy_service_user }}"
+    group: "{{ dummy_service_group }}"
+    mode: '0755'
+  tags:
+    - java-app
+    - directory
+
+- name: Create log directory
+  file:
+    path: "{{ dummy_service_log_path }}"
+    state: directory
+    owner: "{{ dummy_service_user }}"
+    group: "{{ dummy_service_group }}"
+    mode: '0755'
+  tags:
+    - java-app
+    - directory
+
+# ------------------------------------------------------------------------------
+# DEPLOY JAR FILE
+# ------------------------------------------------------------------------------
+
+- name: Copy dummy-service JAR from local app/ folder
+  copy:
+    src: "{{ local_jar_path }}"
+    dest: "{{ dummy_service_jar_path }}"
+    owner: "{{ dummy_service_user }}"
+    group: "{{ dummy_service_group }}"
+    mode: '0644'
+  tags:
+    - java-app
+    - deploy
+  notify:
+    - Restart dummy-service
+
+# ------------------------------------------------------------------------------
+# DEPLOY SYSTEMD SERVICE
+# ------------------------------------------------------------------------------
+
+- name: Deploy systemd service file
+  template:
+    src: dummy-service.service.j2
+    dest: "/etc/systemd/system/{{ dummy_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - java-app
+    - systemd
+  notify:
+    - Reload systemd
+    - Restart dummy-service
+
+# ------------------------------------------------------------------------------
+# ENABLE AND START SERVICE
+# ------------------------------------------------------------------------------
+
+- name: Enable dummy-service
+  systemd:
+    name: "{{ dummy_service_name }}"
+    enabled: yes
+    daemon_reload: yes
+  tags:
+    - java-app
+    - service
+
+- name: Start dummy-service
+  systemd:
+    name: "{{ dummy_service_name }}"
+    state: started
+  tags:
+    - java-app
+    - service
+
+# ------------------------------------------------------------------------------
+# VERIFY DEPLOYMENT
+# ------------------------------------------------------------------------------
+
+- name: Wait for dummy-service to start
+  pause:
+    seconds: 5
+  tags:
+    - java-app
+    - verify
+
+- name: Check if dummy-service is running
+  systemd:
+    name: "{{ dummy_service_name }}"
+  register: service_status
+  tags:
+    - java-app
+    - verify
+
+- name: Display service status
+  debug:
+    msg:
+      - "Service: {{ dummy_service_name }}"
+      - "Status: {{ service_status.status.ActiveState }}"
+      - "Sub-state: {{ service_status.status.SubState }}"
+      - "PID: {{ service_status.status.MainPID | default('N/A') }}"
+  tags:
+    - java-app
+    - verify
+
+- name: Verify log file exists
+  stat:
+    path: "{{ dummy_service_log_file }}"
+  register: log_file_stat
+  tags:
+    - java-app
+    - verify
+
+- name: Show last 10 lines from application log
+  command: tail -n 10 {{ dummy_service_log_file }}
+  register: log_tail
+  when: log_file_stat.stat.exists
+  changed_when: false
+  tags:
+    - java-app
+    - verify
+
+- name: Display log excerpt
+  debug:
+    var: log_tail.stdout_lines
+  when: log_file_stat.stat.exists
+  tags:
+    - java-app
+    - verify
+
+- name: Deployment summary
+  debug:
+    msg:
+      - "========================================"
+      - "Dummy Service Deployment COMPLETE!"
+      - "========================================"
+      - "JAR location: {{ dummy_service_jar_path }}"
+      - "Log file: {{ dummy_service_log_file }}"
+      - "Service status: {{ service_status.status.ActiveState }}"
+      - ""
+      - "Manual checks:"
+      - "  sudo systemctl status {{ dummy_service_name }}"
+      - "  sudo journalctl -u {{ dummy_service_name }} -f"
+      - "  tail -f {{ dummy_service_log_file }}"
+  tags:
+    - java-app
+    - verify

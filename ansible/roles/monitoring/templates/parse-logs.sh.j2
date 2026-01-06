@@ -1,0 +1,231 @@
+#!/bin/bash
+# ------------------------------------------------------------------------------
+# CONFIGURATION - Load from monitoring.conf
+# ------------------------------------------------------------------------------
+
+CONFIG_FILE="{{ monitoring_config_file }}"
+
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    echo "ERROR: Configuration file $CONFIG_FILE not found!"
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# VARIABLES
+# ------------------------------------------------------------------------------
+
+SERVICE_NAME="{{ dummy_service_name }}"
+APP_VM_IP="{{ hostvars[groups['app_server'][0]]['ansible_host'] }}"
+LOG_LINES="{{ log_lines_to_show }}"
+EMAIL="{{ monitoring_email }}"
+EMAIL_SUBJECT="Dummy Service Log Report"
+HOSTNAME="{{ ansible_hostname }}"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+EMAIL_BODY="/tmp/parse-logs-email-$$.txt"
+
+# ------------------------------------------------------------------------------
+# FUNCTIONS
+# ------------------------------------------------------------------------------
+
+get_total_lines() {
+    # Get total number of log entries from journalctl
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME --no-pager | wc -l" 2>/dev/null
+}
+
+get_log_excerpt() {
+    # Get recent log lines from journalctl
+    ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME -n $LOG_LINES --no-pager" 2>/dev/null
+}
+
+analyze_log_levels() {
+    # Analyze log levels from journalctl output
+    local total_lines=$(get_total_lines)
+    
+    local info_count=$(ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME --no-pager | grep -c 'INFO'" 2>/dev/null || echo "0")
+    
+    local warn_count=$(ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME --no-pager | grep -c 'WARN'" 2>/dev/null || echo "0")
+    
+    local error_count=$(ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME --no-pager | grep -c 'ERROR\|FATAL'" 2>/dev/null || echo "0")
+    
+    cat << EOF
+Total log entries: $total_lines
+  INFO:  $info_count
+  WARN:  $warn_count
+  ERROR: $error_count
+EOF
+}
+
+get_recent_errors() {
+    # Get recent errors from journalctl
+    local error_lines=$(ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP \
+        "sudo journalctl -u $SERVICE_NAME --no-pager | grep 'ERROR\|FATAL' | tail -n 5" 2>/dev/null)
+    
+    if [ -z "$error_lines" ]; then
+        echo "✅ No recent errors found"
+    else
+        echo "⚠️ Recent errors detected:"
+        echo "$error_lines"
+    fi
+}
+
+send_log_report() {
+    local subject="$1"
+    local body_file="$2"
+    
+    if [ -f "$body_file" ]; then
+        # Use sendmail with proper headers
+        (
+            echo "From: monitoring@${HOSTNAME}"
+            echo "To: ${EMAIL}"
+            echo "Subject: ${subject}"
+            echo "Content-Type: text/plain; charset=UTF-8"
+            echo ""
+            cat "$body_file"
+        ) | /usr/sbin/sendmail -t
+        echo "✉️  Log report sent to $EMAIL"
+    else
+        echo "ERROR: Email body file not found: $body_file"
+    fi
+}
+
+echo "========================================="
+echo "Dummy Service Log Parser (Remote)"
+echo "========================================="
+echo "Monitoring Host: $HOSTNAME"
+echo "App VM: $APP_VM_IP"
+echo "Service: $SERVICE_NAME"
+echo "Timestamp: $TIMESTAMP"
+echo ""
+
+# Check if we can connect to app-vm
+if ! ssh -i ~/.ssh/id_rsa_monitoring -o ConnectTimeout=10 -o StrictHostKeyChecking=no {{ ansible_user }}@$APP_VM_IP "echo 'Connected'" &>/dev/null; then
+    # SSH connection failed - send alert
+    cat > "$EMAIL_BODY" << EOF
+⚠️ WARNING: Cannot Connect to App VM
+========================================
+
+Monitoring Host: $HOSTNAME
+App VM: $APP_VM_IP
+Service: $SERVICE_NAME
+Timestamp: $TIMESTAMP
+
+⚠️ SSH connection to app-vm failed!
+
+This could indicate:
+1. App VM is down or unreachable
+2. Network connectivity issue
+3. SSH service not running on app-vm
+
+========================================
+Recommended Actions:
+========================================
+
+1. Check app-vm status in Azure portal
+
+2. Try to SSH manually:
+   ssh {{ ansible_user }}@$APP_VM_IP
+
+3. Check network security group rules
+
+4. Restart app-vm if necessary
+
+========================================
+This is an automated alert from the Monitoring VM.
+========================================
+EOF
+
+    send_log_report "⚠️ ALERT: Log File Missing - $HOSTNAME" "$EMAIL_BODY"
+    rm -f "$EMAIL_BODY"
+    exit 1
+fi
+
+LOG_SIZE=$(get_log_size)
+TOTAL_LINES=$(get_total_lines)
+
+echo "Log file information:"
+========================================
+This is an automated alert from the Monitoring VM.
+========================================
+EOF
+    
+    send_log_report "⚠️ $EMAIL_SUBJECT - Cannot Connect to App VM" "$EMAIL_BODY"
+    rm -f "$EMAIL_BODY"
+    exit 1
+fi
+
+# Successfully connected - analyze logs
+TOTAL_LINES=$(get_total_lines)
+
+echo "📊 Log Statistics:"
+echo "  Total entries: $TOTAL_LINES"
+echo "  Showing last: $LOG_LINES lines"
+echo ""
+
+cat > "$EMAIL_BODY" << EOF
+Dummy Service Log Report
+========================================
+
+Monitoring Host: $HOSTNAME
+App VM: $APP_VM_IP
+Service: $SERVICE_NAME
+Timestamp: $TIMESTAMP
+
+========================================
+Log Level Analysis:
+========================================
+
+$(analyze_log_levels)
+
+========================================
+Recent Errors (Last 5):
+========================================
+
+$(get_recent_errors)
+
+========================================
+Last $LOG_LINES Log Entries:
+========================================
+
+$(get_log_excerpt)
+
+========================================
+How to View Full Logs:
+========================================
+
+1. SSH to app-vm:
+   ssh {{ ansible_user }}@$APP_VM_IP
+  
+2. View live logs:
+   sudo journalctl -u $SERVICE_NAME -f
+  
+3. View all logs:
+   sudo journalctl -u $SERVICE_NAME --no-pager
+
+4. View logs since specific time:
+   sudo journalctl -u $SERVICE_NAME --since "1 hour ago"
+
+========================================
+This is an automated log report from the Monitoring VM.
+========================================
+EOF
+
+
+send_log_report "$EMAIL_SUBJECT - $HOSTNAME" "$EMAIL_BODY"
+
+echo "✅ Log report generated successfully"
+
+rm -f "$EMAIL_BODY"
+
+echo "========================================="
+echo "Log parsing completed"
+echo "========================================="
+
+exit 0

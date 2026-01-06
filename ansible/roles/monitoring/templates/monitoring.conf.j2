@@ -1,0 +1,48 @@
+# ------------------------------------------------------------------------------
+# EMAIL CONFIGURATION
+# ------------------------------------------------------------------------------
+
+EMAIL="{{ monitoring_email }}"
+
+EMAIL_SUBJECT="{{ monitoring_email_subject }}"
+
+# SMTP Configuration (for Mailtrap)
+SMTP_SERVER="{{ smtp_server }}"
+SMTP_PORT="{{ smtp_port }}"
+SMTP_USERNAME="{{ smtp_username }}"
+SMTP_PASSWORD="{{ smtp_password }}"
+
+# ------------------------------------------------------------------------------
+# DUMMY SERVICE CONFIGURATION
+# ------------------------------------------------------------------------------
+
+SERVICE_NAME="{{ dummy_service_name }}"
+
+LOG_FILE="{{ dummy_service_log_file }}"
+
+
+LOG_PATH="{{ dummy_service_log_file | dirname }}"
+
+LOG_LINES="{{ log_lines_to_show }}"
+
+# ------------------------------------------------------------------------------
+# SYSTEM RESOURCE THRESHOLDS
+# ------------------------------------------------------------------------------
+
+CPU_THRESHOLD="{{ cpu_threshold }}"
+
+MEMORY_THRESHOLD="{{ memory_threshold }}"
+
+DISK_THRESHOLD="{{ disk_threshold }}"
+
+# ------------------------------------------------------------------------------
+# MONITORING METADATA
+# ------------------------------------------------------------------------------
+
+HOSTNAME="{{ ansible_hostname }}"
+
+FQDN="{{ ansible_fqdn }}"
+
+MONITORING_IP="{{ ansible_default_ipv4.address }}"
+
+SCRIPTS_DIR="{{ monitoring_scripts_dir }}"

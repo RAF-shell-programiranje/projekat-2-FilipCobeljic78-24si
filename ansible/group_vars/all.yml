@@ -1,0 +1,104 @@
+---
+# ==============================================================================
+# GLOBAL VARIABLES - Zajedničke Varijable za Sve VM-ove
+# ==============================================================================
+
+github_repo_owner: "FilipCobeljic78-24si"
+github_repo_name: "projekat-2-FilipCobeljic78-24si"
+github_release_tag: "v1.0.0"
+
+
+dummy_service_jar_url: "https://github.com/{{ github_repo_owner }}/{{ github_repo_name }}/releases/download/{{ github_release_tag }}/dummy-service.jar"
+
+# ------------------------------------------------------------------------------
+# JAVA CONFIGURATION
+# ------------------------------------------------------------------------------
+
+java_version: "17"
+java_package: "openjdk-17-jdk"
+
+
+java_opts: "-Xmx512m -Xms256m"
+
+# ------------------------------------------------------------------------------
+# DUMMY SERVICE PATHS
+# ------------------------------------------------------------------------------
+
+dummy_service_install_dir: "/opt/dummy-service"
+
+
+dummy_service_log_path: "/var/log/dummy-service"
+dummy_service_log_file: "{{ dummy_service_log_path }}/application.log"
+
+local_jar_path: "../app/dummy-service.jar"
+
+app_user: "dummyapp"
+app_group: "dummyapp"
+
+app_port: 8080
+
+# ------------------------------------------------------------------------------
+# MONITORING CONFIGURATION
+# ------------------------------------------------------------------------------
+
+monitoring_email: "test@mailtrap.io"
+
+monitoring_email_subject: "Dummy Service Status Report"
+
+monitoring_cron_schedule: "* * * * *"
+
+postfix_relayhost: ""
+
+dummy_service_name: "dummy-service"
+
+log_lines_to_show: 20
+
+cpu_threshold: 80
+memory_threshold: 80
+disk_threshold: 90
+
+monitoring_scripts_dir: "/usr/local/bin/monitoring"
+
+monitoring_config_file: "/etc/monitoring.conf"
+
+check_service_script: "{{ monitoring_scripts_dir }}/check-service.sh"
+monitor_resources_script: "{{ monitoring_scripts_dir }}/monitor-resources.sh"
+parse_logs_script: "{{ monitoring_scripts_dir }}/parse-logs.sh"
+
+# ------------------------------------------------------------------------------
+# SYSTEM CONFIGURATION
+# ------------------------------------------------------------------------------
+
+system_timezone: "Europe/Belgrade"
+
+
+common_packages:
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - unzip
+  - net-tools
+
+
+monitoring_packages:
+  - postfix
+  - mailutils  
+  - bc  
+
+# ------------------------------------------------------------------------------
+# FIREWALL CONFIGURATION (UFW)
+# ------------------------------------------------------------------------------
+
+ufw_allowed_ports:
+  - "22/tcp"    
+  - "8080/tcp" 
+
+# ------------------------------------------------------------------------------
+# ANSIBLE CONNECTION SETTINGS
+# ------------------------------------------------------------------------------
+
+ansible_python_interpreter: "/usr/bin/python3"
+
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"

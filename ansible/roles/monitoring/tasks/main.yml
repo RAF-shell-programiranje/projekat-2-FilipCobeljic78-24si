@@ -1,0 +1,289 @@
+---
+# ------------------------------------------------------------------------------
+# INSTALL POSTFIX (Email Server)
+# ------------------------------------------------------------------------------
+
+- name: Set Postfix installation to non-interactive mode
+  debconf:
+    name: postfix
+    question: "postfix/main_mailer_type"
+    value: "Internet Site"
+    vtype: "string"
+  tags:
+    - monitoring
+    - postfix
+
+- name: Set Postfix mailname
+  debconf:
+    name: postfix
+    question: "postfix/mailname"
+    value: "{{ ansible_fqdn }}"
+    vtype: "string"
+  tags:
+    - monitoring
+    - postfix
+
+- name: Install Postfix and mail utilities
+  apt:
+    name: "{{ monitoring_packages }}"
+    state: present
+    update_cache: yes
+  tags:
+    - monitoring
+    - packages
+
+- name: Install SASL authentication packages
+  apt:
+    name:
+      - libsasl2-modules
+      - sasl2-bin
+    state: present
+  tags:
+    - monitoring
+    - packages
+
+# ------------------------------------------------------------------------------
+# CONFIGURE POSTFIX
+# ------------------------------------------------------------------------------
+
+- name: Configure Postfix main.cf - Set relayhost
+  lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: '^relayhost\s*='
+    line: "relayhost = {{ postfix_relayhost }}"
+    state: present
+  when: postfix_relayhost != ""
+  notify: Restart Postfix
+  tags:
+    - monitoring
+    - postfix
+    - config
+
+- name: Configure Postfix main.cf - Enable SASL authentication
+  blockinfile:
+    path: /etc/postfix/main.cf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - SASL AUTH"
+    block: |
+      # SASL authentication for relay
+      smtp_sasl_auth_enable = yes
+      smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+      smtp_sasl_security_options = noanonymous
+      smtp_tls_security_level = may
+      smtp_use_tls = yes
+    state: present
+  when: postfix_relayhost != ""
+  notify: Restart Postfix
+  tags:
+    - monitoring
+    - postfix
+    - config
+
+- name: Create SASL password file
+  copy:
+    content: |
+      [{{ smtp_server }}]:{{ smtp_port }} {{ smtp_username }}:{{ smtp_password }}
+    dest: /etc/postfix/sasl_passwd
+    mode: '0600'
+    owner: root
+    group: root
+  when: postfix_relayhost != ""
+  notify:
+    - Postmap SASL password
+    - Restart Postfix
+  tags:
+    - monitoring
+    - postfix
+    - config
+
+- name: Configure Postfix main.cf - Set myhostname
+  lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: '^myhostname\s*='
+    line: "myhostname = {{ ansible_fqdn }}"
+    state: present
+  notify: Restart Postfix
+  tags:
+    - monitoring
+    - postfix
+    - config
+
+- name: Ensure Postfix is started and enabled
+  systemd:
+    name: postfix
+    state: started
+    enabled: yes
+  tags:
+    - monitoring
+    - postfix
+
+# ------------------------------------------------------------------------------
+# CREATE MONITORING SCRIPTS DIRECTORY
+# ------------------------------------------------------------------------------
+
+- name: Create monitoring scripts directory
+  file:
+    path: "{{ monitoring_scripts_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - monitoring
+    - directory
+
+# ------------------------------------------------------------------------------
+# DEPLOY MONITORING SCRIPTS
+# ------------------------------------------------------------------------------
+
+- name: Deploy check-service.sh script
+  template:
+    src: check-service.sh.j2
+    dest: "{{ check_service_script }}"
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - monitoring
+    - scripts
+
+- name: Deploy monitor-resources.sh script
+  template:
+    src: monitor-resources.sh.j2
+    dest: "{{ monitor_resources_script }}"
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - monitoring
+    - scripts
+
+- name: Deploy parse-logs.sh script
+  template:
+    src: parse-logs.sh.j2
+    dest: "{{ parse_logs_script }}"
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - monitoring
+    - scripts
+
+# ------------------------------------------------------------------------------
+# DEPLOY MONITORING CONFIGURATION
+# ------------------------------------------------------------------------------
+
+- name: Deploy monitoring configuration file
+  template:
+    src: monitoring.conf.j2
+    dest: "{{ monitoring_config_file }}"
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - monitoring
+    - config
+
+# ------------------------------------------------------------------------------
+# SETUP CRON JOBS
+# ------------------------------------------------------------------------------
+
+- name: Setup cron job for service monitoring
+  cron:
+    name: "Check Dummy Service Status"
+    user: root
+    minute: "{{ monitoring_cron_schedule.split()[0] }}"
+    hour: "{{ monitoring_cron_schedule.split()[1] if monitoring_cron_schedule.split()|length > 1 else '*' }}"
+    day: "{{ monitoring_cron_schedule.split()[2] if monitoring_cron_schedule.split()|length > 2 else '*' }}"
+    month: "{{ monitoring_cron_schedule.split()[3] if monitoring_cron_schedule.split()|length > 3 else '*' }}"
+    weekday: "{{ monitoring_cron_schedule.split()[4] if monitoring_cron_schedule.split()|length > 4 else '*' }}"
+    job: "{{ check_service_script }}"
+    state: present
+  tags:
+    - monitoring
+    - cron
+
+- name: Setup cron job for log parsing
+  cron:
+    name: "Parse and Send Dummy Service Logs"
+    user: root
+    minute: "{{ monitoring_cron_schedule.split()[0] }}"
+    hour: "{{ monitoring_cron_schedule.split()[1] if monitoring_cron_schedule.split()|length > 1 else '*' }}"
+    day: "{{ monitoring_cron_schedule.split()[2] if monitoring_cron_schedule.split()|length > 2 else '*' }}"
+    month: "{{ monitoring_cron_schedule.split()[3] if monitoring_cron_schedule.split()|length > 3 else '*' }}"
+    weekday: "{{ monitoring_cron_schedule.split()[4] if monitoring_cron_schedule.split()|length > 4 else '*' }}"
+    job: "{{ parse_logs_script }}"
+    state: present
+  tags:
+    - monitoring
+    - cron
+
+- name: Setup cron job for resource monitoring
+  cron:
+    name: "Monitor System Resources"
+    user: root
+    minute: "*/5"
+    job: "{{ monitor_resources_script }}"
+    state: present
+  tags:
+    - monitoring
+    - cron
+
+# ------------------------------------------------------------------------------
+# TEST EMAIL CONFIGURATION
+# ------------------------------------------------------------------------------
+
+- name: Test email sending
+  shell: |
+    echo "Test email from Monitoring VM - $(date)" | \
+    mail -s "Monitoring Setup Complete" "{{ monitoring_email }}"
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+  tags:
+    - monitoring
+    - test
+
+# ------------------------------------------------------------------------------
+# VERIFY DEPLOYMENT
+# ------------------------------------------------------------------------------
+
+- name: Verify monitoring scripts exist
+  stat:
+    path: "{{ item }}"
+  register: script_stats
+  loop:
+    - "{{ check_service_script }}"
+    - "{{ monitor_resources_script }}"
+    - "{{ parse_logs_script }}"
+  tags:
+    - monitoring
+    - verify
+
+- name: Display deployment summary
+  debug:
+    msg:
+      - "========================================="
+      - "✅ Monitoring Setup COMPLETE!"
+      - "========================================="
+      - ""
+      - "Scripts deployed:"
+      - "  - {{ check_service_script }}"
+      - "  - {{ monitor_resources_script }}"
+      - "  - {{ parse_logs_script }}"
+      - ""
+      - "Configuration:"
+      - "  - Config file: {{ monitoring_config_file }}"
+      - "  - Email: {{ monitoring_email }}"
+      - "  - Cron schedule: {{ monitoring_cron_schedule }}"
+      - ""
+      - "Postfix status:"
+      - "  - Service: postfix"
+      - "  - Check: systemctl status postfix"
+      - ""
+      - "Next steps:"
+      - "  1. Check email inbox for test message"
+      - "  2. Verify cron jobs: crontab -l"
+      - "  3. Test scripts manually: {{ check_service_script }}"
+  tags:
+    - monitoring
+    - verify
