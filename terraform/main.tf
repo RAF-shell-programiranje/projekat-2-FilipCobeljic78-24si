@@ -198,7 +198,7 @@ resource "azurerm_linux_virtual_machine" "app_vm" {
   admin_username      = var.admin_username
   tags                = merge(var.tags, { Role = "Application Server" })
 
-  # Disable password authentication - samo SSH key
+  
   disable_password_authentication = true
 
   network_interface_ids = [
